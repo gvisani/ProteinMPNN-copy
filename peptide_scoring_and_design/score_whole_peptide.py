@@ -47,16 +47,18 @@ def set_peptide_in_parsed_jsonl(jsonl_input_path: str, peptide_seq: str, peptide
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--folder_with_pdbs', type=str, required=True)
+    parser.add_argument('--folder_with_pdbs', type=str, required=True) # can score the peptide in multiple PDBs!
     parser.add_argument('--output_dir', type=str, required=True)
     parser.add_argument('--peptide_seq', type=str, required=True)
     parser.add_argument('--peptide_chain', type=str, default='C')
 
     # ProteinMPNN arguments
-    parser.add_argument('--num_seq_per_target', type=int, default=100)
-    parser.add_argument('--batch_size', type=int, default=25)
+    parser.add_argument('--num_seq_per_target', type=int, default=10)
+    parser.add_argument('--batch_size', type=int, default=10)
 
     args = parser.parse_args()
+
+    print(os.listdir(args.folder_with_pdbs))
 
     os.makedirs(args.output_dir, exist_ok=True)
 
