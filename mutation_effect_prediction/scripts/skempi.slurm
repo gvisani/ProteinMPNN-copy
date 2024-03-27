@@ -1,6 +1,6 @@
 #!/bin/bash
 ## Job Name
-#SBATCH --job-name=skempi_single_point
+#SBATCH --job-name=skempi
 ## Allocation Definition
 ## The account and partition options should be the same except in a few cases (e.g. ckpt queue and genpool queue).
 #SBATCH --account=spe
@@ -23,8 +23,8 @@
 ##turn on e-mail notification
 ## export all your environment variables to the batch job session
 #SBATCH --export=all
-#SBATCH -e ./skempi_single_point.err
-#SBATCH -o ./skempi_single_point.log
+#SBATCH -e ./skempi.err
+#SBATCH -o ./skempi.log
 
-bash skempi_single_point.sh
+bash skempi.sh
 

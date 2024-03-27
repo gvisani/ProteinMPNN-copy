@@ -1,0 +1,48 @@
+  0%|          | 0/323 [00:00<?, ?it/s]  0%|          | 0/323 [00:19<?, ?it/s]
+Traceback (most recent call last):
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/scripts/../zero_shot_mutation_effect_prediction.py", line 211, in <module>
+    chain_mutant_in_order = order_mutants_with_proteinmpnn_output(path_for_parsed_chains, path_for_assigned_chains, mutants, chains)
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/scripts/../zero_shot_mutation_effect_prediction.py", line 77, in order_mutants_with_proteinmpnn_output
+    assert len(assigned_chains) == 1, 'Only one PDB file should be processed at a time'
+AssertionError: Only one PDB file should be processed at a time
+  0%|          | 0/323 [00:00<?, ?it/s]rm: cannot remove '/gscratch/spe/gvisan01/mutation_effect_predictions/ATLAS/proteinmpnn/parsed_pdbs.jsonl': No such file or directory
+rm: cannot remove '/gscratch/spe/gvisan01/mutation_effect_predictions/ATLAS/proteinmpnn/assigned_pdbs.jsonl': No such file or directory
+rm: cannot remove '/gscratch/spe/gvisan01/mutation_effect_predictions/ATLAS/proteinmpnn/fixed_pdbs.jsonl': No such file or directory
+  0%|          | 1/323 [00:15<1:23:36, 15.58s/it]  1%|          | 2/323 [00:31<1:23:35, 15.62s/it]Traceback (most recent call last):
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/../helper_scripts/parse_multiple_chains.py", line 163, in <module>
+    main(args)
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/../helper_scripts/parse_multiple_chains.py", line 127, in main
+    xyz, seq = parse_PDB_biounits(biounit, atoms=sidechain_atoms, chain=letter)
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/../helper_scripts/parse_multiple_chains.py", line 44, in parse_PDB_biounits
+    for line in open(x,"rb"):
+NotADirectoryError: [Errno 20] Not a directory: '/gscratch/spe/gvisan01/mutation_effect_predictions/ATLAS/proteinmpnn/temp_pdbs/1MI5.pdb'
+Traceback (most recent call last):
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/../helper_scripts/assign_fixed_chains.py", line 35, in <module>
+    main(args) 
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/../helper_scripts/assign_fixed_chains.py", line 6, in main
+    with open(args.input_path, 'r') as json_file:
+FileNotFoundError: [Errno 2] No such file or directory: '/gscratch/spe/gvisan01/mutation_effect_predictions/ATLAS/proteinmpnn/parsed_pdbs.jsonl'
+Traceback (most recent call last):
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/../helper_scripts/make_fixed_positions_dict.py", line 58, in <module>
+    main(args)
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/../helper_scripts/make_fixed_positions_dict.py", line 10, in main
+    with open(args.input_path, 'r') as json_file:
+FileNotFoundError: [Errno 2] No such file or directory: '/gscratch/spe/gvisan01/mutation_effect_predictions/ATLAS/proteinmpnn/parsed_pdbs.jsonl'
+Traceback (most recent call last):
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/../protein_mpnn_run.py", line 470, in <module>
+    main(args)   
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/../protein_mpnn_run.py", line 176, in main
+    dataset_valid = StructureDataset(args.jsonl_path, truncate=None, max_length=args.max_length, verbose=print_all)
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/protein_mpnn_utils.py", line 472, in __init__
+    with open(jsonl_file) as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/gscratch/spe/gvisan01/mutation_effect_predictions/ATLAS/proteinmpnn/parsed_pdbs.jsonl'
+rm: cannot remove '/gscratch/spe/gvisan01/mutation_effect_predictions/ATLAS/proteinmpnn/temp_pdbs': No such file or directory
+  1%|          | 2/323 [00:36<1:36:56, 18.12s/it]
+Traceback (most recent call last):
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/scripts/../zero_shot_mutation_effect_prediction.py", line 211, in <module>
+    chain_mutant_in_order = order_mutants_with_proteinmpnn_output(path_for_parsed_chains, path_for_assigned_chains, mutants, chains)
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/scripts/../zero_shot_mutation_effect_prediction.py", line 74, in order_mutants_with_proteinmpnn_output
+    parsed_chains = load_jsonl(path_for_parsed_chains)[0]
+  File "/mmfs1/gscratch/spe/gvisan01/ProteinMPNN-copy/mutation_effect_prediction/scripts/../zero_shot_mutation_effect_prediction.py", line 50, in load_jsonl
+    with open(jsonl_path, 'r') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/gscratch/spe/gvisan01/mutation_effect_predictions/ATLAS/proteinmpnn/parsed_pdbs.jsonl'

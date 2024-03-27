@@ -14,6 +14,8 @@ from tqdm import tqdm
 import argparse
 from typing import *
 
+from utils import get_offset_between_proteinmpnn_residue_index_and_PDB_residue_index
+
 def optional_str(astr: Union[None, str]) -> Union[None, str]:
     if astr == 'None':
         return None
@@ -34,13 +36,16 @@ def identify_single_mutation_sites(df, args):
     
     return sites
 
-def format_chain_and_resnums_for_proteinmpnn(chains, resnums):
+def format_chain_and_resnums_for_proteinmpnn(pdbfile, chains, resnums):
+
+    chain_to_offset_dict = get_offset_between_proteinmpnn_residue_index_and_PDB_residue_index(pdbfile)
+
     assert len(chains) == len(resnums)
     chain_to_resnums_dict = {}
     for chain, resnum in zip(chains, resnums):
         if chain not in chain_to_resnums_dict:
             chain_to_resnums_dict[chain] = []
-        chain_to_resnums_dict[chain].append(resnum)
+        chain_to_resnums_dict[chain].append(resnum + chain_to_offset_dict[chain][resnum])
     chains_str = ' '.join(chain_to_resnums_dict.keys())
     resnums_str = ','.join([' '.join(map(str, resnums)) for resnums in chain_to_resnums_dict.values()])
     return chains_str, resnums_str
@@ -71,22 +76,29 @@ def order_mutants_with_proteinmpnn_output(path_for_parsed_chains: str, path_for_
     for chain in chain_to_mutants_resnums_tuple:
         chain_to_mutants_resnums_tuple[chain] = sorted(chain_to_mutants_resnums_tuple[chain], key=lambda x: x[1])
 
-    parsed_chains = load_jsonl(path_for_parsed_chains)[0]
-    assigned_chains = load_jsonl(path_for_assigned_chains)[0]
+    parsed_chains = load_jsonl(path_for_parsed_chains)
+    # assigned_chains = load_jsonl(path_for_assigned_chains)[0]
 
-    assert len(assigned_chains) == 1, 'Only one PDB file should be processed at a time'
-    pdb = list(assigned_chains.keys())[0]
-    chains_list_of_lists = assigned_chains[pdb]
+    assert len(parsed_chains) == 1, "Only one PDB file should be processed at a time. It's likely that the temp_pdbs folder has an extra PDB file that should not be there."
+    # pdb = list(assigned_chains.keys())[0]
+    # chains_list_of_lists = assigned_chains[pdb]
     
+    ## the commented-out code below was wrong
     # chains_in_order = []
     # for elem in chains_list_of_lists:
     #     assert len(elem) in {0, 1}, f"These should be singleton lists or empty lists? Not sure why exactly. This might come back to bite me in the ass in the future... just kidding, it's now! {elem}"
     #     if len(elem) == 1:
     #         chains_in_order.append(elem[0])
 
-    def flatten(xss):
-        return [x for xs in xss for x in xs]
-    chains_in_order = flatten(chains_list_of_lists)
+    # def flatten(xss):
+    #     return [x for xs in xss for x in xs]
+
+    # chains_in_order = flatten(chains_list_of_lists)
+
+    chains_in_order = []
+    for key in parsed_chains[0]:
+        if key.startswith('seq_chain_'):
+            chains_in_order.append(key.strip('seq_chain_'))
 
     # now sort the mutants by chain as well
     chain_mutant_in_order = []
@@ -139,12 +151,16 @@ if __name__ == '__main__':
 
     identifier = f'num_seq_per_target={args.num_seq_per_target}-use_mt_structure={args.use_mt_structure}'
 
-    ## single-point mutations: first get 20-dim conditional probas for all sites of interest, then get requested `log(p_mt) - log(p_wt)`
+
+    alphabet = 'ACDEFGHIKLMNPQRSTVWYX'
+    alphabet_dict = dict(zip(alphabet, range(21)))
+
 
     if args.dont_run_inference:
-        with gzip.open(os.path.join(args.output_dir, 'zero_shot_predictions', f'table_of_conditional_probas-{identifier}.gz'), 'rb') as f:
+        with gzip.open(os.path.join(args.output_dir, 'zero_shot_predictions', f'table_of_conditional_probas-{os.path.basename(args.csv_file).strip(".csv")}-{identifier}.gz'), 'rb') as f:
             table_of_conditional_probas = pickle.load(f)
     else:
+
         table_of_conditional_probas = {
             'WT': {},
             'MT': {}
@@ -157,105 +173,43 @@ if __name__ == '__main__':
         seen_sites = set()
         for i, row in tqdm(df.iterrows(), total=len(df)):
 
-            # # skip multiple mutations
-            # if args.mutant_split_symbol in row[args.mutant_column]:
-            #     continue
+            try:
 
-            if not isinstance(row[args.mutant_chain_column], str) or not isinstance(row[args.mutant_column], str):
-                # sometimes the chain and mutant columns are NaN, in which case we skip the row
-                continue
-            
-            chains = row[args.mutant_chain_column].split(args.mutant_split_symbol)
-            mutants = row[args.mutant_column].split(args.mutant_split_symbol)
-            resnums = [int(mutant[1:-1]) for mutant in mutants]
-            chains_str, resnums_str = format_chain_and_resnums_for_proteinmpnn(chains, resnums)
+                # # skip multiple mutations
+                # if args.mutant_split_symbol in row[args.mutant_column]:
+                #     continue
 
-            wt_pdb = row[args.wt_pdb_column]
+                if not isinstance(row[args.mutant_chain_column], str) or not isinstance(row[args.mutant_column], str):
+                    # sometimes the chain and mutant columns are NaN, in which case we skip the row
+                    continue
 
-            # make temporary directory with single pdb
-            temp_pdbs_dir = os.path.join(args.output_dir, "temp_pdbs")
-            os.makedirs(temp_pdbs_dir, exist_ok=True)
-            os.system(f'cp {os.path.join(args.folder_with_pdbs, wt_pdb + ".pdb")} {temp_pdbs_dir}')
-
-            if (wt_pdb, chains_str, resnums_str) in seen_sites:
-                # still need to add mutants to the table_of_conditional_probas, but let us avoid running the whole proteinmpnn
-                os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/parse_multiple_chains.py")} --input_path={temp_pdbs_dir} --output_path={path_for_parsed_chains}')
-                os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/assign_fixed_chains.py")} --input_path={path_for_parsed_chains} --output_path={path_for_assigned_chains} --chain_list "{chains_str}"')
-                chain_mutant_in_order = order_mutants_with_proteinmpnn_output(path_for_parsed_chains, path_for_assigned_chains, mutants, chains)
-                if (wt_pdb, chains_str, resnums_str) in table_of_conditional_probas['WT']:
-                    table_of_conditional_probas['WT'][(wt_pdb, chains_str, resnums_str)][1].append(chain_mutant_in_order)
-                os.system(f'rm -r {temp_pdbs_dir}') # delete temporary directory with single pdb
-                os.system(f'rm {path_for_parsed_chains}')
-                os.system(f'rm {path_for_assigned_chains}')
-                continue
-                
-            seen_sites.add((wt_pdb, chains_str, resnums_str))
-            
-            os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/parse_multiple_chains.py")} --input_path={temp_pdbs_dir} --output_path={path_for_parsed_chains}')
-            os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/assign_fixed_chains.py")} --input_path={path_for_parsed_chains} --output_path={path_for_assigned_chains} --chain_list "{chains_str}"')
-            os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/make_fixed_positions_dict.py")} --input_path={path_for_parsed_chains} --output_path={path_for_fixed_positions} --chain_list "{chains_str}" --position_list "{resnums_str}" --specify_non_fixed')
-            os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../protein_mpnn_run.py")} \
-                                                                                                --suppress_print 1 \
-                                                                                                --jsonl_path {path_for_parsed_chains} \
-                                                                                                --chain_id_jsonl {path_for_assigned_chains} \
-                                                                                                --fixed_positions_jsonl {path_for_fixed_positions} \
-                                                                                                --out_folder {args.output_dir} \
-                                                                                                --num_seq_per_target {args.num_seq_per_target} \
-                                                                                                --batch_size {args.batch_size} \
-                                                                                                --conditional_probs_only 1')
-            
-            os.system(f'rm -r {temp_pdbs_dir}') # delete temporary directory with single pdb
-
-            # parse output file to get the conditional probas
-            output = np.load(os.path.join(args.output_dir, 'conditional_probs_only', wt_pdb + '.npz'))
-            chain_mutant_in_order = order_mutants_with_proteinmpnn_output(path_for_parsed_chains, path_for_assigned_chains, mutants, chains)
-            os.system(f'rm {path_for_parsed_chains}')
-            os.system(f'rm {path_for_assigned_chains}')
-            os.system(f'rm {path_for_fixed_positions}')
-
-            if len(output['log_p'].shape) == 3: # why this again? is it the number of sequence per target thing?
-                log_p = np.mean(output['log_p'], axis=0)[output['design_mask'].astype(np.bool_)]
-            elif len(output['log_p'].shape) == 2:
-                log_p = output['log_p'][output['design_mask'].astype(np.bool_)]
-            else:
-                raise ValueError()
-            
-            # if log_p.shape[0] > 1:
-            #     print(f"Warning: there is a redundancy of {log_p.shape[0]} in logits, taking the first one assuming it's an inserion code thing and that the empty icode is desired..")
-            # elif log_p.shape[0] == 0:
-            #     print(f"Warning: site {(chains_str, resnums_str)} not found!")
-            #     continue
-            if log_p.shape[0] == 0:
-                print(f"Warning: site {(chains_str, resnums_str)} not found!")
-                continue
-
-            assert log_p.shape[0] == len(chain_mutant_in_order), f"Length of log_p and chain_mutant_in_order should be the same, but are {log_p.shape[0]} and {len(chain_mutant_in_order)} respectively."
-
-            # log_p = log_p[0]
-            table_of_conditional_probas['WT'][(wt_pdb, chains_str, resnums_str)] = (log_p, [chain_mutant_in_order])
-
-
-            if args.use_mt_structure:
-                mt_pdb = row[args.mt_pdb_column]
+                wt_pdb = row[args.wt_pdb_column]
 
                 # make temporary directory with single pdb
                 temp_pdbs_dir = os.path.join(args.output_dir, "temp_pdbs")
                 os.makedirs(temp_pdbs_dir, exist_ok=True)
-                os.system(f'cp {os.path.join(args.folder_with_pdbs, str(mt_pdb) + ".pdb")} {temp_pdbs_dir}')
+                os.system(f'cp {os.path.join(args.folder_with_pdbs, wt_pdb + ".pdb")} {temp_pdbs_dir}')
 
-                if (mt_pdb, chains_str, resnums_str) in seen_sites:
+                chains = row[args.mutant_chain_column].split(args.mutant_split_symbol)
+                mutants = row[args.mutant_column].split(args.mutant_split_symbol)
+                resnums = [int(mutant[1:-1]) for mutant in mutants]
+                chains_str, resnums_str = format_chain_and_resnums_for_proteinmpnn(os.path.join(args.folder_with_pdbs, wt_pdb + ".pdb"), chains, resnums)
+
+                if (wt_pdb, chains_str, resnums_str) in seen_sites:
                     # still need to add mutants to the table_of_conditional_probas, but let us avoid running the whole proteinmpnn
                     os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/parse_multiple_chains.py")} --input_path={temp_pdbs_dir} --output_path={path_for_parsed_chains}')
                     os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/assign_fixed_chains.py")} --input_path={path_for_parsed_chains} --output_path={path_for_assigned_chains} --chain_list "{chains_str}"')
                     chain_mutant_in_order = order_mutants_with_proteinmpnn_output(path_for_parsed_chains, path_for_assigned_chains, mutants, chains)
-                    if (wt_pdb, chains_str, resnums_str) in table_of_conditional_probas['MT']:
-                        table_of_conditional_probas['MT'][(wt_pdb, chains_str, resnums_str)][1].append(chain_mutant_in_order)
+                    if (wt_pdb, chains_str, resnums_str) in table_of_conditional_probas['WT']:
+                        table_of_conditional_probas['WT'][(wt_pdb, chains_str, resnums_str)][1].append(chain_mutant_in_order)
                     os.system(f'rm -r {temp_pdbs_dir}') # delete temporary directory with single pdb
                     os.system(f'rm {path_for_parsed_chains}')
                     os.system(f'rm {path_for_assigned_chains}')
                     continue
+                    
+                seen_sites.add((wt_pdb, chains_str, resnums_str))
 
-                seen_sites.add((mt_pdb, chains_str, resnums_str))
+                print(chains_str, resnums_str)
 
                 os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/parse_multiple_chains.py")} --input_path={temp_pdbs_dir} --output_path={path_for_parsed_chains}')
                 os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/assign_fixed_chains.py")} --input_path={path_for_parsed_chains} --output_path={path_for_assigned_chains} --chain_list "{chains_str}"')
@@ -270,94 +224,213 @@ if __name__ == '__main__':
                                                                                                     --batch_size {args.batch_size} \
                                                                                                     --conditional_probs_only 1')
                 
-                os.system(f'rm -r {temp_pdbs_dir}') # delete temporary directory with single pdb
-                os.system(f'rm {path_for_parsed_chains}')
-                os.system(f'rm {path_for_assigned_chains}')
-                os.system(f'rm {path_for_fixed_positions}')
 
                 # parse output file to get the conditional probas
-                try:
-                    output = np.load(os.path.join(args.output_dir, 'conditional_probs_only', str(mt_pdb) + '.npz'))
-                except FileNotFoundError:
-                    print(f"Warning: file {str(mt_pdb) + '.npz'} not found!")
-                    continue
-                
-                if len(output['log_p'].shape) == 3:
+                output = np.load(os.path.join(args.output_dir, 'conditional_probs_only', wt_pdb + '.npz'))
+
+                chain_mutant_in_order = order_mutants_with_proteinmpnn_output(path_for_parsed_chains, path_for_assigned_chains, mutants, chains)
+
+                os.system(f'rm -r {temp_pdbs_dir}') # delete temporary directory with single pdb
+                # os.system(f'rm {path_for_parsed_chains}')
+                # os.system(f'rm {path_for_assigned_chains}')
+                # os.system(f'rm {path_for_fixed_positions}')
+
+                if len(output['log_p'].shape) == 3: # why this again? is it the number of sequence per target thing?
                     log_p = np.mean(output['log_p'], axis=0)[output['design_mask'].astype(np.bool_)]
                 elif len(output['log_p'].shape) == 2:
                     log_p = output['log_p'][output['design_mask'].astype(np.bool_)]
                 else:
                     raise ValueError()
                 
-                # assert log_p.shape == (1, 21)
-                # log_p = np.squeeze(log_p, axis=0)
+                # if log_p.shape[0] > 1:
+                #     print(f"Warning: there is a redundancy of {log_p.shape[0]} in logits, taking the first one assuming it's an inserion code thing and that the empty icode is desired..")
+                # elif log_p.shape[0] == 0:
+                #     print(f"Warning: site {(chains_str, resnums_str)} not found!")
+                #     continue
+                if log_p.shape[0] == 0:
+                    print(f"Warning: site {(chains_str, resnums_str)} not found!")
+                    continue
 
-                assert log_p.shape[0] == len(chain_mutant_in_order), f"Length of log_p and chain_mutant_in_order should be the same, but are {log_p.shape[0]} and {len(chain_mutant_in_order)} respectively."
+                wt_aas_being_designed = ''.join([alphabet[index] for index in output['S'][output['design_mask'].astype(np.bool_)]])
+                wt_aas_true = ''.join([m[0] for c, m in chain_mutant_in_order])
+                assert wt_aas_being_designed == wt_aas_true, f"wt_aas_being_designed and wt_aas_true should be the same, but are {wt_aas_being_designed} and {wt_aas_true} respectively."
+                assert log_p.shape[0] == len(chain_mutant_in_order), f"Length of log_p and chain_mutant_in_order should be the same, but are {log_p.shape[0]} and {len(chain_mutant_in_order)} respectively. The mutants are {mutants} and the chains are {chains}. The PDB is {wt_pdb}."
 
-                table_of_conditional_probas['MT'][(chains_str, resnums_str)] = (log_p, [chain_mutant_in_order])
+                # log_p = log_p[0]
+                table_of_conditional_probas['WT'][(wt_pdb, chains_str, resnums_str)] = (log_p, [chain_mutant_in_order])
+
+
+                if args.use_mt_structure:
+                    mt_pdb = row[args.mt_pdb_column]
+
+                    # make temporary directory with single pdb
+                    temp_pdbs_dir = os.path.join(args.output_dir, "temp_pdbs")
+                    os.makedirs(temp_pdbs_dir, exist_ok=True)
+                    os.system(f'cp {os.path.join(args.folder_with_pdbs, str(mt_pdb) + ".pdb")} {temp_pdbs_dir}')
+
+                    chains_str, resnums_str = format_chain_and_resnums_for_proteinmpnn(os.path.join(args.folder_with_pdbs, mt_pdb + ".pdb"), chains, resnums)
+
+                    if (mt_pdb, chains_str, resnums_str) in seen_sites:
+                        # still need to add mutants to the table_of_conditional_probas, but let us avoid running the whole proteinmpnn
+                        os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/parse_multiple_chains.py")} --input_path={temp_pdbs_dir} --output_path={path_for_parsed_chains}')
+                        os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/assign_fixed_chains.py")} --input_path={path_for_parsed_chains} --output_path={path_for_assigned_chains} --chain_list "{chains_str}"')
+                        chain_mutant_in_order = order_mutants_with_proteinmpnn_output(path_for_parsed_chains, path_for_assigned_chains, mutants, chains)
+                        if (mt_pdb, chains_str, resnums_str) in table_of_conditional_probas['MT']:
+                            table_of_conditional_probas['MT'][(mt_pdb, chains_str, resnums_str)][1].append(chain_mutant_in_order)
+                        os.system(f'rm -r {temp_pdbs_dir}') # delete temporary directory with single pdb
+                        os.system(f'rm {path_for_parsed_chains}')
+                        os.system(f'rm {path_for_assigned_chains}')
+                        continue
+
+                    seen_sites.add((mt_pdb, chains_str, resnums_str))
+
+                    os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/parse_multiple_chains.py")} --input_path={temp_pdbs_dir} --output_path={path_for_parsed_chains}')
+                    os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/assign_fixed_chains.py")} --input_path={path_for_parsed_chains} --output_path={path_for_assigned_chains} --chain_list "{chains_str}"')
+                    os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/make_fixed_positions_dict.py")} --input_path={path_for_parsed_chains} --output_path={path_for_fixed_positions} --chain_list "{chains_str}" --position_list "{resnums_str}" --specify_non_fixed')
+                    os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../protein_mpnn_run.py")} \
+                                                                                                        --suppress_print 1 \
+                                                                                                        --jsonl_path {path_for_parsed_chains} \
+                                                                                                        --chain_id_jsonl {path_for_assigned_chains} \
+                                                                                                        --fixed_positions_jsonl {path_for_fixed_positions} \
+                                                                                                        --out_folder {args.output_dir} \
+                                                                                                        --num_seq_per_target {args.num_seq_per_target} \
+                                                                                                        --batch_size {args.batch_size} \
+                                                                                                        --conditional_probs_only 1')
+
+                    # parse output file to get the conditional probas
+                    try:
+                        output = np.load(os.path.join(args.output_dir, 'conditional_probs_only', str(mt_pdb) + '.npz'))
+                    except FileNotFoundError:
+                        print(f"Warning: file {str(mt_pdb) + '.npz'} not found!")
+                        continue
+
+                    chain_mutant_in_order = order_mutants_with_proteinmpnn_output(path_for_parsed_chains, path_for_assigned_chains, mutants, chains)
+
+                    os.system(f'rm -r {temp_pdbs_dir}') # delete temporary directory with single pdb
+                    # os.system(f'rm {path_for_parsed_chains}')
+                    # os.system(f'rm {path_for_assigned_chains}')
+                    # os.system(f'rm {path_for_fixed_positions}')
+                    
+                    if len(output['log_p'].shape) == 3:
+                        log_p = np.mean(output['log_p'], axis=0)[output['design_mask'].astype(np.bool_)]
+                    elif len(output['log_p'].shape) == 2:
+                        log_p = output['log_p'][output['design_mask'].astype(np.bool_)]
+                    else:
+                        raise ValueError()
+                    
+                    # assert log_p.shape == (1, 21)
+                    # log_p = np.squeeze(log_p, axis=0)
+
+                    mt_aas_being_designed = ''.join([alphabet[index] for index in output['S'][output['design_mask'].astype(np.bool_)]])
+                    mt_aas_true = ''.join([m[-1] for c, m in chain_mutant_in_order])
+                    assert mt_aas_being_designed == mt_aas_true, f"mt_aas_being_designed and mt_aas_true should be the same, but are {mt_aas_being_designed} and {mt_aas_true} respectively."
+                    assert log_p.shape[0] == len(chain_mutant_in_order), f"Length of log_p and chain_mutant_in_order should be the same, but are {log_p.shape[0]} and {len(chain_mutant_in_order)} respectively. The mutants are {mutants} and the chains are {chains}. The PDB is {mt_pdb}."
+
+                    table_of_conditional_probas['MT'][(mt_pdb, chains_str, resnums_str)] = (log_p, [chain_mutant_in_order])
+
+            except Exception as e:
+                # os.system(f'rm -r {temp_pdbs_dir}') # delete temporary directory with single pdb
+                # os.system(f'rm {path_for_parsed_chains}')
+                # os.system(f'rm {path_for_assigned_chains}')
+                # os.system(f'rm {path_for_fixed_positions}')
+                # raise e
+                print(f'Warning, error thrown at row {i}: {e}')
+                pass
+
         
-        with gzip.open(os.path.join(args.output_dir, 'zero_shot_predictions', f'table_of_conditional_probas-{identifier}.gz'), 'wb') as f:
+        with gzip.open(os.path.join(args.output_dir, 'zero_shot_predictions', f'table_of_conditional_probas-{os.path.basename(args.csv_file).strip(".csv")}-{identifier}.gz'), 'wb') as f:
             pickle.dump(table_of_conditional_probas, f)
+    
 
-    alphabet = 'ACDEFGHIKLMNPQRSTVWYX'
-    alphabet_dict = dict(zip(alphabet, range(21)))
 
     ## 2) now iterate over the rows again, and get `log(p_mt) - log(p_wt)` for every row
     log_p_mt = []
     log_p_wt = []
     log_p_mt__minus__log_p_wt = []
     for i, row in df.iterrows():
-        # # skip multiple mutations
-        # if args.mutant_split_symbol in row[args.mutant_column]:
-        #     log_p_mt__minus__log_p_wt.append(np.nan)
-        #     continue
 
-        if not isinstance(row[args.mutant_chain_column], str) or not isinstance(row[args.mutant_column], str):
-            # sometimes the chain and mutant columns are NaN, in which case we skip the row
-            continue
+        try:
 
-        wt_pdb = row[args.wt_pdb_column]
-        
-        chains = row[args.mutant_chain_column].split(args.mutant_split_symbol)
-        mutants = row[args.mutant_column].split(args.mutant_split_symbol)
-        resnums = [int(mutant[1:-1]) for mutant in mutants]
-        chains_str, resnums_str = format_chain_and_resnums_for_proteinmpnn(chains, resnums)
+            # # skip multiple mutations
+            # if args.mutant_split_symbol in row[args.mutant_column]:
+            #     log_p_mt__minus__log_p_wt.append(np.nan)
+            #     continue
 
-        # chain = row[args.mutant_chain_column]
-        # resnum = int(row[args.mutant_column][1:-1])
+            if not isinstance(row[args.mutant_chain_column], str) or not isinstance(row[args.mutant_column], str):
+                # sometimes the chain and mutant columns are NaN, in which case we skip the row
+                log_p_mt.append(np.nan)
+                log_p_wt.append(np.nan)
+                log_p_mt__minus__log_p_wt.append(np.nan)
+                continue
 
-        if (wt_pdb, chains_str, resnums_str) not in table_of_conditional_probas['WT']:
-            log_p_mt.append(np.nan)
-            log_p_wt.append(np.nan)
-            log_p_mt__minus__log_p_wt.append(np.nan)
-        elif args.use_mt_structure and (row[args.mt_pdb_column], chains_str, resnums_str) not in table_of_conditional_probas['MT']:
-            log_p_mt.append(np.nan)
-            log_p_wt.append(np.nan)
-            log_p_mt__minus__log_p_wt.append(np.nan)
-        else:
-            log_p_wt_vec, chain_mutant_in_order_list_wt = table_of_conditional_probas['WT'][(wt_pdb, chains_str, resnums_str)]
+            wt_pdb = row[args.wt_pdb_column]
+
+            # if not isinstance(wt_pdb, str):
+            #     # sometimes the wt_pdb column is NaN, in which case we skip the row
+            #     log_p_mt.append(np.nan)
+            #     log_p_wt.append(np.nan)
+            #     log_p_mt__minus__log_p_wt.append(np.nan)
+            #     continue
+            
+            chains = row[args.mutant_chain_column].split(args.mutant_split_symbol)
+            mutants = row[args.mutant_column].split(args.mutant_split_symbol)
+            resnums = [int(mutant[1:-1]) for mutant in mutants]
+
+            wt_chains_str, wt_resnums_str = format_chain_and_resnums_for_proteinmpnn(os.path.join(args.folder_with_pdbs, wt_pdb + ".pdb"), chains, resnums)
+
             if args.use_mt_structure:
                 mt_pdb = row[args.mt_pdb_column]
-                log_p_mt_vec, chain_mutant_in_order_list_mt = table_of_conditional_probas['MT'][(mt_pdb, chains_str, resnums_str)]
-                assert chain_mutant_in_order_list_wt == chain_mutant_in_order_list_mt, f"chain_mutant_in_order_wt and chain_mutant_in_order_mt should be the same, but are {chain_mutant_in_order_wt} and {chain_mutant_in_order_mt} respectively."
+                # if not isinstance(mt_pdb, str):
+                #     # sometimes the mt_pdb column is NaN, in which case we skip the row
+                #     log_p_mt.append(np.nan)
+                #     log_p_wt.append(np.nan)
+                #     log_p_mt__minus__log_p_wt.append(np.nan)
+                #     continue
+                mt_chains_str, mt_resnums_str = format_chain_and_resnums_for_proteinmpnn(os.path.join(args.folder_with_pdbs, mt_pdb + ".pdb"), chains, resnums)
+
+            # chain = row[args.mutant_chain_column]
+            # resnum = int(row[args.mutant_column][1:-1])
+
+            if (wt_pdb, wt_chains_str, wt_resnums_str) not in table_of_conditional_probas['WT']:
+                log_p_mt.append(np.nan)
+                log_p_wt.append(np.nan)
+                log_p_mt__minus__log_p_wt.append(np.nan)
+            elif args.use_mt_structure and (row[args.mt_pdb_column], mt_chains_str, mt_resnums_str) not in table_of_conditional_probas['MT']:
+                log_p_mt.append(np.nan)
+                log_p_wt.append(np.nan)
+                log_p_mt__minus__log_p_wt.append(np.nan)
             else:
-                log_p_mt_vec = log_p_wt_vec
+                log_p_wt_vec, chain_mutant_in_order_list_wt = table_of_conditional_probas['WT'][(wt_pdb, wt_chains_str, wt_resnums_str)]
+                if args.use_mt_structure:
+                    log_p_mt_vec, chain_mutant_in_order_list_mt = table_of_conditional_probas['MT'][(mt_pdb, mt_chains_str, mt_resnums_str)]
+                    if chain_mutant_in_order_list_wt != chain_mutant_in_order_list_mt:
+                        print(f"Warning: chain_mutant_in_order_list_wt and chain_mutant_in_order_list_mt should be the same, but are {chain_mutant_in_order_list_wt} and {chain_mutant_in_order_list_mt} respectively.")
+                    # assert chain_mutant_in_order_list_wt == chain_mutant_in_order_list_mt, f"chain_mutant_in_order_list_wt and chain_mutant_in_order_list_mt should be the same, but are {chain_mutant_in_order_list_wt} and {chain_mutant_in_order_list_mt} respectively."
+                else:
+                    log_p_mt_vec = log_p_wt_vec
+                
+                temp_log_p_wt = []
+                temp_log_p_mt = []
+                for i, (mutant, chain) in enumerate(zip(mutants, chains)):
+                    for chain_mutant_in_order_wt in chain_mutant_in_order_list_wt:
+                        if (chain, mutant) in chain_mutant_in_order_wt:
+                            index = chain_mutant_in_order_wt.index((chain, mutant))
+                            break
+                    aa_wt = mutant[0]
+                    aa_mt = mutant[-1]
+                    temp_log_p_wt.append(log_p_wt_vec[index, alphabet_dict[aa_wt]])
+                    temp_log_p_mt.append(log_p_mt_vec[index, alphabet_dict[aa_mt]])
             
-            temp_log_p_wt = []
-            temp_log_p_mt = []
-            for i, (mutant, chain) in enumerate(zip(mutants, chains)):
-                for chain_mutant_in_order_wt in chain_mutant_in_order_list_wt:
-                    if (chain, mutant) in chain_mutant_in_order_wt:
-                        index = chain_mutant_in_order_wt.index((chain, mutant))
-                        break
-                aa_wt = mutant[0]
-                aa_mt = mutant[-1]
-                temp_log_p_wt.append(log_p_wt_vec[index, alphabet_dict[aa_wt]])
-                temp_log_p_mt.append(log_p_mt_vec[index, alphabet_dict[aa_mt]])
+                log_p_wt.append(np.mean(temp_log_p_wt))
+                log_p_mt.append(np.mean(temp_log_p_mt))
+                log_p_mt__minus__log_p_wt.append(log_p_mt[-1] - log_p_wt[-1])
         
-            log_p_wt.append(np.mean(temp_log_p_wt))
-            log_p_mt.append(np.mean(temp_log_p_mt))
-            log_p_mt__minus__log_p_wt.append(log_p_mt[-1] - log_p_wt[-1])
+        except Exception as e:
+            log_p_mt.append(np.nan)
+            log_p_wt.append(np.nan)
+            log_p_mt__minus__log_p_wt.append(np.nan)
+            print(f'Warning, error thrown at row {i}: {e}')
+            pass
 
     df_out = df.copy()
     df_out['log_p_mt'] = log_p_mt
