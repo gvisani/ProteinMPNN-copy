@@ -4,7 +4,7 @@ pdb_dir='/gscratch/spe/gvisan01/mutation_effect_predictions/magea3_binders/pdbs/
 
 base_dir='/gscratch/spe/gvisan01/mutation_effect_predictions/magea3_binders/'
 
-systems='bx513_0001_bb_relaxed_alanine_scan bx513_0001_bb_relaxed_sat_mut' # 'bx513_sat_mut bx513_alanine_scan bx513_0001_relaxed_alanine_scan bx513_0001_relaxed_sat_mut bx513_0001_bb_relaxed_alanine_scan bx513_0001_bb_relaxed_sat_mut'
+systems='bx282_0001_bb_relaxed_alanine_scan bx282_0001_bb_relaxed_sat_mut' # 'bx282_sat_mut bx282_alanine_scan bx282_0001_relaxed_alanine_scan bx282_0001_relaxed_sat_mut bx282_0001__bbrelaxed_alanine_scan bx282_0001_bb_relaxed_sat_mut'
 
 for system in $systems
     do

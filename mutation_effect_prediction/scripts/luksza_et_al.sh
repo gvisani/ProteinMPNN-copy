@@ -1,11 +1,12 @@
 
 
-pdb_dir='/gscratch/spe/gvisan01/tcr_pmhc/pdbs/'
+pdb_dir='/gscratch/spe/gvisan01/mutation_effect_predictions/luksza_et_al/pdbs/'
 
 base_dir='/gscratch/spe/gvisan01/mutation_effect_predictions/luksza_et_al/'
 
 # systems='luksza_et_al_tcr1_ec50_sat_mut luksza_et_al_tcr1_ec50_sat_mut_FILTERED_HIGH_EC50s'
-systems='luksza_et_al_tcr1_ec50_sat_mut_FILTERED_HIGH_EC50s'
+# systems='luksza_et_al_tcr2_ec50_sat_mut luksza_et_al_tcr3_ec50_sat_mut luksza_et_al_tcr4_ec50_sat_mut luksza_et_al_tcr5_ec50_sat_mut luksza_et_al_tcr6_ec50_sat_mut'
+systems='luksza_et_al_tcr7_ec50_sat_mut'
 
 for system in $systems
     do

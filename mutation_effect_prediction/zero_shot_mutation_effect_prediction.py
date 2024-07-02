@@ -121,6 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('--dont_run_inference', type=int, default=0)
 
     # ProteinMPNN arguments
+    parser.add_argument('--model_name', type=str, default='v_48_020')
     parser.add_argument('--num_seq_per_target', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=25)
 
@@ -187,7 +188,7 @@ if __name__ == '__main__':
 
                 # make temporary directory with single pdb
                 temp_pdbs_dir = os.path.join(args.output_dir, "temp_pdbs")
-                os.makedirs(temp_pdbs_dir, exist_ok=True)
+                os.makedirs(temp_pdbs_dir)
                 os.system(f'cp {os.path.join(args.folder_with_pdbs, wt_pdb + ".pdb")} {temp_pdbs_dir}')
 
                 chains = row[args.mutant_chain_column].split(args.mutant_split_symbol)
@@ -216,6 +217,7 @@ if __name__ == '__main__':
                 os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../helper_scripts/make_fixed_positions_dict.py")} --input_path={path_for_parsed_chains} --output_path={path_for_fixed_positions} --chain_list "{chains_str}" --position_list "{resnums_str}" --specify_non_fixed')
                 os.system(f'python {os.path.join(os.path.dirname(os.path.realpath(__file__)), f"../protein_mpnn_run.py")} \
                                                                                                     --suppress_print 1 \
+                                                                                                    --model_name {args.model_name} \
                                                                                                     --jsonl_path {path_for_parsed_chains} \
                                                                                                     --chain_id_jsonl {path_for_assigned_chains} \
                                                                                                     --fixed_positions_jsonl {path_for_fixed_positions} \
@@ -265,7 +267,7 @@ if __name__ == '__main__':
 
                     # make temporary directory with single pdb
                     temp_pdbs_dir = os.path.join(args.output_dir, "temp_pdbs")
-                    os.makedirs(temp_pdbs_dir, exist_ok=True)
+                    os.makedirs(temp_pdbs_dir)
                     os.system(f'cp {os.path.join(args.folder_with_pdbs, str(mt_pdb) + ".pdb")} {temp_pdbs_dir}')
 
                     chains_str, resnums_str = format_chain_and_resnums_for_proteinmpnn(os.path.join(args.folder_with_pdbs, mt_pdb + ".pdb"), chains, resnums)
@@ -438,7 +440,7 @@ if __name__ == '__main__':
     df_out['log_p_mt__minus__log_p_wt'] = log_p_mt__minus__log_p_wt
 
 
-    ## 3) TODO handle multiple mutations
+    ## 3) TODO handle multiple mutations --> I think this is already handled???
 
     df_out.to_csv(os.path.join(args.output_dir, 'zero_shot_predictions', args.csv_file.split('/')[-1].replace('.csv', f'-{identifier}.csv')), index=False)
 
